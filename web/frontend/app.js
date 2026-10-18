@@ -2150,178 +2150,232 @@ async function sendQuery() {
 
 
 // ==================================================
-// UPDATE QUERY DETAILS
+// UPDATE QUERY INFORMATION AND STATISTICS
 // ==================================================
 
-function updateQueryDetails(
-    data
-) {
+function updateQueryDetails(data) {
 
-    const state =
-        document.getElementById(
-            "result-state"
-        );
+    const stateElement =
+        document.getElementById("result-state");
 
+    const districtElement =
+        document.getElementById("result-district");
 
-    const district =
-        document.getElementById(
-            "result-district"
-        );
+    const intentElement =
+        document.getElementById("result-intent");
 
+    const retrievalElement =
+        document.getElementById("result-retrieval");
 
-    const intent =
-        document.getElementById(
-            "result-intent"
-        );
+    const recordsElement =
+        document.getElementById("stat-records");
 
+    const averageElement =
+        document.getElementById("stat-average");
 
-    const retrieval =
-        document.getElementById(
-            "result-retrieval"
-        );
+    const maximumElement =
+        document.getElementById("stat-maximum");
 
-
-    const records =
-        document.getElementById(
-            "stat-records"
-        );
+    const minimumElement =
+        document.getElementById("stat-minimum");
 
 
-    const average =
-        document.getElementById(
-            "stat-average"
-        );
-
-
-    const maximum =
-        document.getElementById(
-            "stat-maximum"
-        );
-
-
-    const minimum =
-        document.getElementById(
-            "stat-minimum"
-        );
-
+    // ----------------------------------------------
+    // RESET PANEL WHEN THERE IS NO RESPONSE
+    // ----------------------------------------------
 
     if (!data) {
 
-        state.textContent =
-            "—";
+        [
+            stateElement,
+            districtElement,
+            intentElement,
+            retrievalElement,
+            recordsElement,
+            averageElement,
+            maximumElement,
+            minimumElement
+        ].forEach(element => {
 
-        district.textContent =
-            "—";
+            if (element) {
+                element.textContent = "—";
+            }
 
-        intent.textContent =
-            "—";
-
-        retrieval.textContent =
-            "—";
-
-        records.textContent =
-            "—";
-
-        average.textContent =
-            "—";
-
-        maximum.textContent =
-            "—";
-
-        minimum.textContent =
-            "—";
+        });
 
         return;
-
     }
 
 
-    state.textContent =
+    // ----------------------------------------------
+    // READ NESTED ANALYSIS DATA
+    // ----------------------------------------------
+
+    const analysis = data.analysis || {};
+
+    const states = Array.isArray(analysis.states)
+        ? analysis.states
+        : [];
+
+    const districts = Array.isArray(analysis.districts)
+        ? analysis.districts
+        : [];
+
+
+    const state =
         data.state ||
+        states[0] ||
         "—";
 
-
-    district.textContent =
+    const district =
         data.district ||
+        districts[0] ||
         "—";
 
+    const intent =
+        data.intent ||
+        analysis.intent ||
+        "—";
 
-    intent.textContent =
-        formatIntent(
-            data.intent
-        );
-
-
-    retrieval.textContent =
+    const retrieval =
         data.retrieval_mode ||
         "—";
 
 
+    // ----------------------------------------------
+    // UPDATE QUERY INFORMATION
+    // ----------------------------------------------
+
+    if (stateElement) {
+        stateElement.textContent = state;
+    }
+
+    if (districtElement) {
+        districtElement.textContent = district;
+    }
+
+    if (intentElement) {
+        intentElement.textContent =
+            String(intent)
+                .replaceAll("_", " ")
+                .replace(/\b\w/g, letter =>
+                    letter.toUpperCase()
+                );
+    }
+
+    if (retrievalElement) {
+        retrievalElement.textContent =
+            String(retrieval).toUpperCase();
+    }
+
+
+    // ----------------------------------------------
+    // READ STATISTICS
+    // ----------------------------------------------
+
     const statistics =
         data.statistics ||
+        data.data_analysis?.statistics ||
+        data.data_analysis ||
         {};
 
 
-    const totalRecords =
-        statistics.total_records !==
-        undefined
+    function getStatistic(keys) {
 
-            ? statistics.total_records
+        for (const key of keys) {
 
-            : statistics.record_count;
+            const value = statistics[key];
 
+            if (
+                value !== undefined &&
+                value !== null &&
+                value !== ""
+            ) {
+                return value;
+            }
+        }
 
-    const averageExtraction =
-        statistics.average_extraction !==
-        undefined
-
-            ? statistics.average_extraction
-
-            : statistics.average;
-
-
-    const maximumExtraction =
-        statistics.maximum_extraction !==
-        undefined
-
-            ? statistics.maximum_extraction
-
-            : statistics.maximum;
+        return null;
+    }
 
 
-    const minimumExtraction =
-        statistics.minimum_extraction !==
-        undefined
+    function formatNumber(value, percentage = false) {
 
-            ? statistics.minimum_extraction
+        if (
+            value === null ||
+            value === undefined ||
+            value === ""
+        ) {
+            return "—";
+        }
 
-            : statistics.minimum;
+        const number = Number(value);
 
+        if (!Number.isFinite(number)) {
+            return "—";
+        }
 
-    records.textContent =
-        totalRecords !== undefined
-            ? totalRecords
-            : "—";
-
-
-    average.textContent =
-        formatPercentage(
-            averageExtraction
-        );
-
-
-    maximum.textContent =
-        formatPercentage(
-            maximumExtraction
-        );
+        return number.toFixed(2) +
+            (percentage ? "%" : "");
+    }
 
 
-    minimum.textContent =
-        formatPercentage(
-            minimumExtraction
-        );
+    const totalRecords = getStatistic([
+        "total_records",
+        "record_count",
+        "records",
+        "count"
+    ]);
+
+    const average = getStatistic([
+        "average_extraction",
+        "average",
+        "mean_extraction"
+    ]);
+
+    const maximum = getStatistic([
+        "maximum_extraction",
+        "maximum",
+        "max_extraction",
+        "max"
+    ]);
+
+    const minimum = getStatistic([
+        "minimum_extraction",
+        "minimum",
+        "min_extraction",
+        "min"
+    ]);
+
+
+    // ----------------------------------------------
+    // UPDATE STATISTICS PANEL
+    // ----------------------------------------------
+
+    if (recordsElement) {
+        recordsElement.textContent =
+            totalRecords !== null
+                ? totalRecords
+                : "—";
+    }
+
+    if (averageElement) {
+        averageElement.textContent =
+            formatNumber(average, true);
+    }
+
+    if (maximumElement) {
+        maximumElement.textContent =
+            formatNumber(maximum, true);
+    }
+
+    if (minimumElement) {
+        minimumElement.textContent =
+            formatNumber(minimum, true);
+    }
 
 }
+
 
 
 // ==================================================

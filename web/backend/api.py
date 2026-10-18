@@ -43,46 +43,88 @@ from full_pipeline import run_full_pipeline
 # --------------------------------------------------
 
 app = FastAPI(
-    title="INGRES API"
+    title="INGRES API",
+    description="AI-driven groundwater data analysis API",
+    version="1.0.0"
 )
 
 
 # --------------------------------------------------
-# CORS
+# CORS CONFIGURATION
 # --------------------------------------------------
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+        "http://localhost:5501",
+        "http://127.0.0.1:5501"
+    ],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"]
 )
 
 
 # --------------------------------------------------
-# CHAT REQUEST
+# CHAT REQUEST MODEL
 # --------------------------------------------------
 
 class ChatRequest(BaseModel):
-
     query: str
 
 
 # --------------------------------------------------
-# ROOT
+# HELPER: DATASET PATH
+# --------------------------------------------------
+
+def get_dataset_path():
+
+    return os.path.join(
+        PROJECT_ROOT,
+        "data",
+        "INGRES_Step1_Cleaned_Dataset.csv"
+    )
+
+
+# --------------------------------------------------
+# HELPER: LOAD DATASET
+# --------------------------------------------------
+
+def load_dataset():
+
+    data_path = get_dataset_path()
+
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(
+            f"Dataset not found: {data_path}"
+        )
+
+    return pd.read_csv(data_path)
+
+
+# --------------------------------------------------
+# ROOT ENDPOINT
 # --------------------------------------------------
 
 @app.get("/")
 def root():
 
     return {
-        "message": "INGRES API is running"
+        "success": True,
+        "message": "INGRES API is running",
+        "endpoints": [
+            "/api/health",
+            "/api/dataset",
+            "/api/map-data",
+            "/api/chat"
+        ]
     }
 
 
 # --------------------------------------------------
-# HEALTH CHECK
+# HEALTH CHECK ENDPOINT
 # --------------------------------------------------
 
 @app.get("/api/health")
@@ -103,24 +145,13 @@ def get_dataset():
 
     try:
 
-        data_path = os.path.join(
-            PROJECT_ROOT,
-            "data",
-            "INGRES_Step1_Cleaned_Dataset.csv"
-        )
+        df = load_dataset()
 
-        df = pd.read_csv(
-            data_path
-        )
+        # Convert NaN and infinite values to JSON-safe nulls.
+        df = df.astype(object)
+        df = df.where(pd.notna(df), None)
 
-        df = df.where(
-            pd.notnull(df),
-            None
-        )
-
-        records = df.to_dict(
-            orient="records"
-        )
+        records = df.to_dict(orient="records")
 
         return {
             "success": True,
@@ -146,43 +177,44 @@ def get_map_data():
 
     try:
 
-        data_path = os.path.join(
-            PROJECT_ROOT,
-            "data",
-            "INGRES_Step1_Cleaned_Dataset.csv"
-        )
-
-        df = pd.read_csv(
-            data_path
-        )
+        df = load_dataset()
 
         records = []
 
         for _, row in df.iterrows():
 
-            records.append(
-                {
-                    "state": row.get(
-                        "STATE",
-                        None
-                    ),
-
-                    "district": row.get(
-                        "DISTRICT",
-                        None
-                    ),
-
-                    "category": row.get(
-                        "Extraction_Category",
-                        "Unknown"
-                    ),
-
-                    "extraction": row.get(
-                        "Stage_of_Ground_Water_Extraction_pct",
-                        None
-                    )
-                }
+            extraction = row.get(
+                "Stage_of_Ground_Water_Extraction_pct",
+                None
             )
+
+            # Convert missing extraction values to None.
+            if pd.isna(extraction):
+                extraction = None
+            else:
+                extraction = float(extraction)
+
+            state = row.get("STATE", None)
+            district = row.get("DISTRICT", None)
+            category = row.get(
+                "Extraction_Category",
+                "Unknown"
+            )
+
+            records.append({
+                "state": (
+                    None if pd.isna(state) else str(state)
+                ),
+                "district": (
+                    None if pd.isna(district) else str(district)
+                ),
+                "category": (
+                    "Unknown"
+                    if pd.isna(category)
+                    else str(category)
+                ),
+                "extraction": extraction
+            })
 
         return {
             "success": True,
@@ -207,18 +239,28 @@ def chat(request: ChatRequest):
 
     try:
 
-        result = run_full_pipeline(
-            request.query
-        )
+        query = request.query.strip()
 
-        # ------------------------------------------
-        # Make sure frontend receives success=true
-        # ------------------------------------------
+        if not query:
+            return {
+                "success": False,
+                "error": "Query cannot be empty"
+            }
 
+        result = run_full_pipeline(query)
+
+        # Ensure the pipeline returns a dictionary.
+        if not isinstance(result, dict):
+            return {
+                "success": False,
+                "error": "Unexpected response from INGRES pipeline"
+            }
+
+        # Make sure the frontend receives a success field.
         result["success"] = True
 
         # ------------------------------------------
-        # Fix missing state in response text
+        # FIX MISSING STATE IN RESPONSE
         # ------------------------------------------
 
         if (
@@ -231,27 +273,15 @@ def chat(request: ChatRequest):
                 {}
             )
 
-            if isinstance(
-                database_result,
-                dict
-            ):
+            if isinstance(database_result, dict):
 
-                state_values = database_result.get(
-                    "STATE"
-                )
+                state_values = database_result.get("STATE")
 
-                if isinstance(
-                    state_values,
-                    dict
-                ) and state_values:
+                if isinstance(state_values, dict) and state_values:
 
-                    state = next(
-                        iter(
-                            state_values.values()
-                        )
+                    result["state"] = next(
+                        iter(state_values.values())
                     )
-
-                    result["state"] = state
 
         return result
 
@@ -272,7 +302,8 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8000
+        "web.backend.api:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True
     )
